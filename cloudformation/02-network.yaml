@@ -1,0 +1,237 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "PulseCheck VPC, subnets, routes, and EKS load balancer discovery tags."
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: pulsecheck
+    AllowedPattern: "^[a-z][a-z0-9-]{2,31}$"
+  ClusterName:
+    Type: String
+    Default: pulsecheck-eks
+    AllowedPattern: "^[0-9A-Za-z][A-Za-z0-9-]{1,99}$"
+  VpcCidr:
+    Type: String
+    Default: 10.42.0.0/16
+  PublicSubnetACidr:
+    Type: String
+    Default: 10.42.10.0/24
+  PublicSubnetBCidr:
+    Type: String
+    Default: 10.42.20.0/24
+  PrivateSubnetACidr:
+    Type: String
+    Default: 10.42.110.0/24
+  PrivateSubnetBCidr:
+    Type: String
+    Default: 10.42.120.0/24
+  CreateNatGateway:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Set to true when private worker nodes need internet egress.
+
+Conditions:
+  WithNatGateway: !Equals [!Ref CreateNatGateway, "true"]
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-vpc"
+        - Key: Project
+          Value: !Ref ProjectName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-igw"
+        - Key: Project
+          Value: !Ref ProjectName
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-rt"
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref PublicSubnetACidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-a"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+          Value: shared
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref PublicSubnetBCidr
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-public-b"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+          Value: shared
+        - Key: kubernetes.io/role/elb
+          Value: "1"
+
+  PublicSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetA
+
+  PublicSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Ref PrivateSubnetACidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-a"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+          Value: shared
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Ref PrivateSubnetBCidr
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-b"
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+          Value: shared
+        - Key: kubernetes.io/role/internal-elb
+          Value: "1"
+
+  NatGatewayEip:
+    Type: AWS::EC2::EIP
+    Condition: WithNatGateway
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-nat-eip"
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Condition: WithNatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEip.AllocationId
+      SubnetId: !Ref PublicSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-nat"
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-private-rt"
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Condition: WithNatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnetARouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetA
+
+  PrivateSubnetBRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetB
+
+Outputs:
+  VpcId:
+    Description: VPC ID.
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VpcId"
+  PublicSubnetIds:
+    Description: Public subnet IDs for EKS nodes and internet-facing load balancers.
+    Value: !Join [",", [!Ref PublicSubnetA, !Ref PublicSubnetB]]
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnetIds"
+  PrivateSubnetIds:
+    Description: Private subnet IDs for private EKS nodes.
+    Value: !Join [",", [!Ref PrivateSubnetA, !Ref PrivateSubnetB]]
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetIds"
+  CreateNatGateway:
+    Description: Whether this stack created a NAT Gateway.
+    Value: !Ref CreateNatGateway

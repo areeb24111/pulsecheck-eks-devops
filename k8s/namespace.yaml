@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pulsecheck
+  labels:
+    app.kubernetes.io/name: pulsecheck
+    app.kubernetes.io/part-of: pulsecheck

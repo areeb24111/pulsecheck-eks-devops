@@ -1,0 +1,164 @@
+name: PulseCheck CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Test, build, and simulate deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run local pipeline
+        run: |
+          make ci
+
+  deploy-aws:
+    name: Deploy to AWS EKS
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && vars.ENABLE_AWS_DEPLOY == 'true'
+
+    permissions:
+      id-token: write
+      contents: read
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      PROJECT_NAME: pulsecheck
+      CLUSTER_NAME: pulsecheck-eks
+      KUBERNETES_VERSION: "1.36"
+      ECR_STACK_NAME: pulsecheck-ecr
+      NETWORK_STACK_NAME: pulsecheck-network
+      EKS_STACK_NAME: pulsecheck-eks
+      NODE_SUBNET_TIER: public
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deployment settings
+        run: |
+          if [ -z "${AWS_ROLE_TO_ASSUME}" ]; then
+            echo "AWS_ROLE_TO_ASSUME is required when ENABLE_AWS_DEPLOY=true."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.36.0"
+
+      - name: Deploy ECR stack
+        run: |
+          aws cloudformation deploy \
+            --region "${AWS_REGION}" \
+            --stack-name "${ECR_STACK_NAME}" \
+            --template-file cloudformation/01-ecr.yaml \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides ProjectName="${PROJECT_NAME}"
+
+      - name: Deploy network stack
+        run: |
+          aws cloudformation deploy \
+            --region "${AWS_REGION}" \
+            --stack-name "${NETWORK_STACK_NAME}" \
+            --template-file cloudformation/02-network.yaml \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              ProjectName="${PROJECT_NAME}" \
+              ClusterName="${CLUSTER_NAME}" \
+              CreateNatGateway=false
+
+      - name: Deploy EKS stack
+        run: |
+          aws cloudformation deploy \
+            --region "${AWS_REGION}" \
+            --stack-name "${EKS_STACK_NAME}" \
+            --template-file cloudformation/04-eks-cluster-nodegroup.yaml \
+            --capabilities CAPABILITY_IAM \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              ProjectName="${PROJECT_NAME}" \
+              ClusterName="${CLUSTER_NAME}" \
+              KubernetesVersion="${KUBERNETES_VERSION}" \
+              NetworkStackName="${NETWORK_STACK_NAME}" \
+              NodeSubnetTier="${NODE_SUBNET_TIER}" \
+              DeployPrincipalArn="${AWS_ROLE_TO_ASSUME}"
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        run: |
+          REPOSITORY_URI="$(aws cloudformation describe-stacks \
+            --region "${AWS_REGION}" \
+            --stack-name "${ECR_STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='RepositoryUri'].OutputValue" \
+            --output text)"
+          IMAGE_URI="${REPOSITORY_URI}:${GITHUB_SHA}"
+          docker build --platform linux/amd64 -t "${IMAGE_URI}" -t "${REPOSITORY_URI}:latest" .
+          docker push "${IMAGE_URI}"
+          docker push "${REPOSITORY_URI}:latest"
+          echo "image_uri=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+
+      - name: Deploy Kubernetes manifests
+        run: |
+          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${CLUSTER_NAME}"
+          sed "s|IMAGE_PLACEHOLDER|${{ steps.image.outputs.image_uri }}|g" k8s/deployment.yaml > /tmp/pulsecheck-deployment.yaml
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f /tmp/pulsecheck-deployment.yaml
+          kubectl apply -f k8s/service.yaml
+          kubectl -n pulsecheck rollout status deployment/pulsecheck --timeout=300s
+
+      - name: Publish live endpoint
+        run: |
+          for attempt in $(seq 1 60); do
+            HOSTNAME="$(kubectl -n pulsecheck get service pulsecheck -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+            IP="$(kubectl -n pulsecheck get service pulsecheck -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+            if [ -n "${HOSTNAME}" ]; then
+              echo "Live URL: http://${HOSTNAME}/health"
+              echo "### PulseCheck live URL" >> "${GITHUB_STEP_SUMMARY}"
+              echo "http://${HOSTNAME}/health" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+            if [ -n "${IP}" ]; then
+              echo "Live URL: http://${IP}/health"
+              echo "### PulseCheck live URL" >> "${GITHUB_STEP_SUMMARY}"
+              echo "http://${IP}/health" >> "${GITHUB_STEP_SUMMARY}"
+              exit 0
+            fi
+            sleep 10
+          done
+          kubectl -n pulsecheck get service pulsecheck -o wide
+          exit 1

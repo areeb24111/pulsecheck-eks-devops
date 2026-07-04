@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulsecheck
+  namespace: pulsecheck
+  labels:
+    app.kubernetes.io/name: pulsecheck
+    app.kubernetes.io/component: api
+    app.kubernetes.io/part-of: pulsecheck
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: pulsecheck
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: http

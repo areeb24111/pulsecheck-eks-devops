@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "GitHub Actions OIDC deploy role for PulseCheck."
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: pulsecheck
+    AllowedPattern: "^[a-z][a-z0-9-]{2,31}$"
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or username.
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name.
+  GitHubBranch:
+    Type: String
+    Default: main
+  CreateGitHubOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues:
+      - "true"
+      - "false"
+    Description: Set to false when the AWS account already has the GitHub OIDC provider.
+  ExistingGitHubOIDCProviderArn:
+    Type: String
+    Default: ""
+    Description: Required when CreateGitHubOIDCProvider is false.
+  GitHubOIDCThumbprint:
+    Type: String
+    Default: 6938fd4d98bab03faadb97b34396831e3780aea1
+
+Conditions:
+  ShouldCreateProvider: !Equals [!Ref CreateGitHubOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - !Ref GitHubOIDCThumbprint
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  GitHubActionsDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub "GitHub Actions deploy role for ${GitHubOrg}/${GitHubRepo}"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateProvider
+                - !Ref GitHubOIDCProvider
+                - !Ref ExistingGitHubOIDCProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${GitHubBranch}"
+      Policies:
+        - PolicyName: PulseCheckDeployPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: Identity
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: "*"
+              - Sid: CloudFormation
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStackResource
+                  - cloudformation:DescribeStackResources
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:ListStackResources
+                  - cloudformation:UpdateStack
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
+              - Sid: EcrPushPull
+                Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchDeleteImage
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:CreateRepository
+                  - ecr:DescribeImages
+                  - ecr:DescribeRepositories
+                  - ecr:GetAuthorizationToken
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:ListImages
+                  - ecr:PutImage
+                  - ecr:PutImageScanningConfiguration
+                  - ecr:PutLifecyclePolicy
+                  - ecr:UploadLayerPart
+                Resource: "*"
+              - Sid: EksEc2AndLoadBalancing
+                Effect: Allow
+                Action:
+                  - eks:*
+                  - ec2:*
+                  - autoscaling:Describe*
+                  - elasticloadbalancing:*
+                Resource: "*"
+              - Sid: IamForEksCloudFormation
+                Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreateRole
+                  - iam:CreateServiceLinkedRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:GetOpenIDConnectProvider
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListInstanceProfiles
+                  - iam:ListOpenIDConnectProviders
+                  - iam:ListRolePolicies
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:UpdateAssumeRolePolicy
+                Resource: "*"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  GitHubActionsRoleArn:
+    Description: Add this ARN as GitHub repository secret AWS_ROLE_TO_ASSUME.
+    Value: !GetAtt GitHubActionsDeployRole.Arn
+  TrustedRepository:
+    Description: Repository and branch allowed to assume this role.
+    Value: !Sub "${GitHubOrg}/${GitHubRepo}:${GitHubBranch}"

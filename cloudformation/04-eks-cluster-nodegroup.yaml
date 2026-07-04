@@ -1,0 +1,217 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "PulseCheck Amazon EKS cluster, managed node group, IAM roles, add-ons, and deploy access."
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: pulsecheck
+    AllowedPattern: "^[a-z][a-z0-9-]{2,31}$"
+  ClusterName:
+    Type: String
+    Default: pulsecheck-eks
+    AllowedPattern: "^[0-9A-Za-z][A-Za-z0-9-]{1,99}$"
+  KubernetesVersion:
+    Type: String
+    Default: "1.36"
+    AllowedValues:
+      - "1.36"
+      - "1.35"
+      - "1.34"
+  NetworkStackName:
+    Type: String
+    Default: pulsecheck-network
+  NodeSubnetTier:
+    Type: String
+    Default: public
+    AllowedValues:
+      - public
+      - private
+    Description: Use private only when the network stack has NAT or required VPC endpoints.
+  NodeInstanceType:
+    Type: String
+    Default: t3.small
+  NodeMinCapacity:
+    Type: Number
+    Default: 1
+    MinValue: 1
+  NodeDesiredCapacity:
+    Type: Number
+    Default: 2
+    MinValue: 1
+  NodeMaxCapacity:
+    Type: Number
+    Default: 3
+    MinValue: 1
+  DeployPrincipalArn:
+    Type: String
+    Default: ""
+    Description: Optional IAM role or user ARN that should receive EKS cluster-admin access.
+    AllowedPattern: "^$|^arn:.*:iam::[0-9]{12}:(role|user)/.+$"
+  AdditionalAdminPrincipalArn:
+    Type: String
+    Default: ""
+    Description: Optional second IAM role or user ARN for local kubectl administration.
+    AllowedPattern: "^$|^arn:.*:iam::[0-9]{12}:(role|user)/.+$"
+
+Conditions:
+  UsePrivateSubnets: !Equals [!Ref NodeSubnetTier, private]
+  HasDeployPrincipal: !Not [!Equals [!Ref DeployPrincipalArn, ""]]
+  HasAdditionalAdminPrincipal: !Not [!Equals [!Ref AdditionalAdminPrincipalArn, ""]]
+
+Resources:
+  EKSClusterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  EKSNodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+        - arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref ClusterName
+      Version: !Ref KubernetesVersion
+      RoleArn: !GetAtt EKSClusterRole.Arn
+      AccessConfig:
+        AuthenticationMode: API_AND_CONFIG_MAP
+        BootstrapClusterCreatorAdminPermissions: !If [HasDeployPrincipal, false, true]
+      ResourcesVpcConfig:
+        EndpointPrivateAccess: false
+        EndpointPublicAccess: true
+        SubnetIds: !If
+          - UsePrivateSubnets
+          - Fn::Split:
+              - ","
+              - Fn::ImportValue:
+                  Fn::Sub: "${NetworkStackName}-PrivateSubnetIds"
+          - Fn::Split:
+              - ","
+              - Fn::ImportValue:
+                  Fn::Sub: "${NetworkStackName}-PublicSubnetIds"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  EKSNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      ClusterName: !Ref EKSCluster
+      NodeRole: !GetAtt EKSNodeRole.Arn
+      Subnets: !If
+        - UsePrivateSubnets
+        - Fn::Split:
+            - ","
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-PrivateSubnetIds"
+        - Fn::Split:
+            - ","
+            - Fn::ImportValue:
+                Fn::Sub: "${NetworkStackName}-PublicSubnetIds"
+      InstanceTypes:
+        - !Ref NodeInstanceType
+      CapacityType: ON_DEMAND
+      ScalingConfig:
+        MinSize: !Ref NodeMinCapacity
+        DesiredSize: !Ref NodeDesiredCapacity
+        MaxSize: !Ref NodeMaxCapacity
+      UpdateConfig:
+        MaxUnavailable: 1
+      Labels:
+        workload: pulsecheck
+      Tags:
+        Project: !Ref ProjectName
+
+  VpcCniAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EKSNodeGroup
+    Properties:
+      ClusterName: !Ref EKSCluster
+      AddonName: vpc-cni
+
+  CoreDnsAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EKSNodeGroup
+    Properties:
+      ClusterName: !Ref EKSCluster
+      AddonName: coredns
+
+  KubeProxyAddon:
+    Type: AWS::EKS::Addon
+    DependsOn: EKSNodeGroup
+    Properties:
+      ClusterName: !Ref EKSCluster
+      AddonName: kube-proxy
+
+  DeployPrincipalAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    Condition: HasDeployPrincipal
+    Properties:
+      ClusterName: !Ref EKSCluster
+      PrincipalArn: !Ref DeployPrincipalArn
+      Type: STANDARD
+      AccessPolicies:
+        - PolicyArn: !Sub "arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          AccessScope:
+            Type: cluster
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  AdditionalAdminAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    Condition: HasAdditionalAdminPrincipal
+    Properties:
+      ClusterName: !Ref EKSCluster
+      PrincipalArn: !Ref AdditionalAdminPrincipalArn
+      Type: STANDARD
+      AccessPolicies:
+        - PolicyArn: !Sub "arn:${AWS::Partition}:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          AccessScope:
+            Type: cluster
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  ClusterName:
+    Description: EKS cluster name.
+    Value: !Ref EKSCluster
+  ClusterEndpoint:
+    Description: Kubernetes API endpoint.
+    Value: !GetAtt EKSCluster.Endpoint
+  ClusterSecurityGroupId:
+    Description: EKS-created cluster security group.
+    Value: !GetAtt EKSCluster.ClusterSecurityGroupId
+  NodeRoleArn:
+    Description: Managed node group IAM role ARN.
+    Value: !GetAtt EKSNodeRole.Arn
+  KubectlCommand:
+    Description: Configure local kubectl for this cluster.
+    Value: !Sub "aws eks update-kubeconfig --region ${AWS::Region} --name ${EKSCluster}"

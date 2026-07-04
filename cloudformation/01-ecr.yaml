@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "PulseCheck ECR repository."
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: pulsecheck
+    AllowedPattern: "^[a-z][a-z0-9-]{2,31}$"
+    Description: Project name used for the ECR repository.
+
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ProjectName
+      EmptyOnDelete: true
+      ImageTagMutability: MUTABLE
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the latest 30 images for demo history and remove older images.",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 30
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  RepositoryName:
+    Description: ECR repository name.
+    Value: !Ref Repository
+    Export:
+      Name: !Sub "${AWS::StackName}-RepositoryName"
+  RepositoryUri:
+    Description: ECR repository URI.
+    Value: !GetAtt Repository.RepositoryUri
+    Export:
+      Name: !Sub "${AWS::StackName}-RepositoryUri"
