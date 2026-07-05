@@ -8,9 +8,9 @@ Save final screenshots in `docs/screenshots/` using these names:
 |---|---|
 | GitHub Actions success | `github-actions-success.png` |
 | Local pipeline success | `local-pipeline-pass.png` |
-| Docker health response | `docker-health-response.png` |
-| CloudFormation stacks | `eks-cloudformation-stacks.png` |
-| EKS pods and service | `eks-kubectl-service.png` |
+| Docker health response | `docker-local-health.png` |
+| CloudFormation stacks | `cloudformation-stacks.png` |
+| EKS pods and service | `kubectl-pods-service.png` |
 | Live health endpoint | `live-health-endpoint.png` |
 
 ## 1. Local Pipeline

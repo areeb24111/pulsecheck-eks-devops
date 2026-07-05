@@ -35,18 +35,18 @@ flowchart LR
 
 ## Demo Evidence
 
-Add final screenshots in [docs/screenshots](docs/screenshots/README.md) before submitting. The expected evidence set is:
+Final screenshots are included in [docs/screenshots](docs/screenshots/README.md):
 
 | Evidence | Screenshot path |
 |---|---|
-| GitHub Actions pipeline success | `docs/screenshots/github-actions-success.png` |
-| Local pipeline passing | `docs/screenshots/local-pipeline-pass.png` |
-| Docker container `/health` response | `docs/screenshots/docker-health-response.png` |
-| CloudFormation stacks complete | `docs/screenshots/eks-cloudformation-stacks.png` |
-| EKS pods and LoadBalancer service | `docs/screenshots/eks-kubectl-service.png` |
-| Live `/health` endpoint response | `docs/screenshots/live-health-endpoint.png` |
+| GitHub Actions pipeline success | [docs/screenshots/github-actions-success.png](docs/screenshots/github-actions-success.png) |
+| Local pipeline passing | [docs/screenshots/local-pipeline-pass.png](docs/screenshots/local-pipeline-pass.png) |
+| Docker container `/health` response | [docs/screenshots/docker-local-health.png](docs/screenshots/docker-local-health.png) |
+| CloudFormation stacks complete | [docs/screenshots/cloudformation-stacks.png](docs/screenshots/cloudformation-stacks.png) |
+| EKS pods and LoadBalancer service | [docs/screenshots/kubectl-pods-service.png](docs/screenshots/kubectl-pods-service.png) |
+| Live `/health` endpoint response | [docs/screenshots/live-health-endpoint.png](docs/screenshots/live-health-endpoint.png) |
 
-The screenshot directory is intentionally tracked so these files can be committed with the final submission.
+Together, these screenshots show the passing GitHub Actions run, local validation, local container health response, completed CloudFormation stacks, running EKS pods with the public LoadBalancer service, and the live `/health` endpoint returning `healthy`.
 
 ## Repository Structure
 
@@ -74,7 +74,9 @@ The screenshot directory is intentionally tracked so these files can be committe
 |   |-- local_pipeline.sh
 |   `-- setup_github_oidc.sh
 |-- docs/
-|   `-- DEMO.md
+|   |-- DEMO.md
+|   `-- screenshots/
+|       `-- README.md
 |-- .github/workflows/ci-cd.yml
 |-- Dockerfile
 |-- Makefile
