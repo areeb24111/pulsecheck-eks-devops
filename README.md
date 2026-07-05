@@ -33,6 +33,21 @@ flowchart LR
 | Cloud-native showcase | Kubernetes `LoadBalancer` service exposes `http://<load-balancer>/health`. |
 | Cleanup | `scripts/cleanup.sh` removes Kubernetes resources and CloudFormation stacks in safe order. |
 
+## Demo Evidence
+
+Add final screenshots in [docs/screenshots](docs/screenshots/README.md) before submitting. The expected evidence set is:
+
+| Evidence | Screenshot path |
+|---|---|
+| GitHub Actions pipeline success | `docs/screenshots/github-actions-success.png` |
+| Local pipeline passing | `docs/screenshots/local-pipeline-pass.png` |
+| Docker container `/health` response | `docs/screenshots/docker-health-response.png` |
+| CloudFormation stacks complete | `docs/screenshots/eks-cloudformation-stacks.png` |
+| EKS pods and LoadBalancer service | `docs/screenshots/eks-kubectl-service.png` |
+| Live `/health` endpoint response | `docs/screenshots/live-health-endpoint.png` |
+
+The screenshot directory is intentionally tracked so these files can be committed with the final submission.
+
 ## Repository Structure
 
 ```text
@@ -142,6 +157,8 @@ http://a12e2ccfc5cc247989e1772f1335f334-1852857093.ap-south-1.elb.amazonaws.com/
 ```
 
 The Kubernetes service uses a standard internet-facing AWS `LoadBalancer` service and forwards port `80` to the PulseCheck container on port `8000`.
+
+For this assessment, the standard Kubernetes `LoadBalancer` service is intentionally simple and easy to demonstrate. A production EKS deployment could use the AWS Load Balancer Controller for more advanced load-balancer management.
 
 ## One-Time GitHub OIDC Setup
 

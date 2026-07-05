@@ -8,8 +8,6 @@ __pycache__/
 coverage.xml
 htmlcov/
 *.egg-info/
-docs/screenshots/*
-!docs/screenshots/.gitkeep
 Pulsecheck-Areeb_accessKeys.csv
 *.pem
 *.key

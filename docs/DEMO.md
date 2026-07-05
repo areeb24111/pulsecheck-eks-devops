@@ -2,6 +2,17 @@
 
 Use this checklist to record the 3-minute showcase or capture README screenshots.
 
+Save final screenshots in `docs/screenshots/` using these names:
+
+| Evidence | File |
+|---|---|
+| GitHub Actions success | `github-actions-success.png` |
+| Local pipeline success | `local-pipeline-pass.png` |
+| Docker health response | `docker-health-response.png` |
+| CloudFormation stacks | `eks-cloudformation-stacks.png` |
+| EKS pods and service | `eks-kubectl-service.png` |
+| Live health endpoint | `live-health-endpoint.png` |
+
 ## 1. Local Pipeline
 
 ```bash
