@@ -46,7 +46,7 @@ Capture two running pods and the LoadBalancer hostname.
 ## 5. Live Endpoint
 
 ```bash
-curl http://a2ecac93977974f86ab2ae4d9fd4d534-714764199.ap-south-1.elb.amazonaws.com/health
+curl http://a12e2ccfc5cc247989e1772f1335f334-1852857093.ap-south-1.elb.amazonaws.com/health
 ```
 
 Capture the live JSON response.

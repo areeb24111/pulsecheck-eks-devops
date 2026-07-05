@@ -138,7 +138,7 @@ The network stack creates public and private subnet pairs. To avoid unnecessary 
 The assessment deployment is running in `ap-south-1`:
 
 ```text
-http://a2ecac93977974f86ab2ae4d9fd4d534-714764199.ap-south-1.elb.amazonaws.com/health
+http://a12e2ccfc5cc247989e1772f1335f334-1852857093.ap-south-1.elb.amazonaws.com/health
 ```
 
 The Kubernetes service uses a standard internet-facing AWS `LoadBalancer` service and forwards port `80` to the PulseCheck container on port `8000`.
