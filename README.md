@@ -80,7 +80,6 @@ Together, these screenshots show the passing GitHub Actions run, local validatio
 |-- .github/workflows/ci-cd.yml
 |-- Dockerfile
 |-- Makefile
-|-- ASSIGNMENT_MAPPING.md
 |-- requirements.txt
 `-- requirements-dev.txt
 ```
