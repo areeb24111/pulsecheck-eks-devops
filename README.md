@@ -80,7 +80,6 @@ Together, these screenshots show the passing GitHub Actions run, local validatio
 |   |-- local_pipeline.sh
 |   `-- setup_github_oidc.sh
 |-- docs/
-|   |-- DEMO.md
 |   |-- demo/
 |   |   `-- pulsecheck-demo.mov
 |   `-- screenshots/
