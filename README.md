@@ -33,6 +33,12 @@ flowchart LR
 | Cloud-native showcase | Kubernetes `LoadBalancer` service exposes `http://<load-balancer>/health`. |
 | Cleanup | `scripts/cleanup.sh` removes Kubernetes resources and CloudFormation stacks in safe order. |
 
+## Demo Video
+
+The 3-minute assessment walkthrough is included here:
+
+[Watch or download the demo video](docs/demo/pulsecheck-demo.mov)
+
 ## Demo Evidence
 
 Final screenshots are included in [docs/screenshots](docs/screenshots/README.md):
@@ -75,6 +81,8 @@ Together, these screenshots show the passing GitHub Actions run, local validatio
 |   `-- setup_github_oidc.sh
 |-- docs/
 |   |-- DEMO.md
+|   |-- demo/
+|   |   `-- pulsecheck-demo.mov
 |   `-- screenshots/
 |       `-- README.md
 |-- .github/workflows/ci-cd.yml
